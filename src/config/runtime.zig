@@ -1,28 +1,36 @@
 const std = @import("std");
 
-pub const Mode = enum {
-    tcp_only,
-    tcp_and_udp,
+const root = @import("root");
 
-    pub fn parse(text: []const u8) !Mode {
-        if (std.mem.eql(u8, text, "tcp_only")) return .tcp_only;
-        if (std.mem.eql(u8, text, "tcp_and_udp")) return .tcp_and_udp;
-        return error.InvalidMode;
-    }
+const compat = struct {
+    pub const Mode = enum {
+        tcp_only,
+        tcp_and_udp,
+
+        pub fn parse(text: []const u8) !@This() {
+            if (std.mem.eql(u8, text, "tcp_only")) return .tcp_only;
+            if (std.mem.eql(u8, text, "tcp_and_udp")) return .tcp_and_udp;
+            return error.InvalidMode;
+        }
+    };
+
+    pub const Method = enum {
+        aes_128_gcm,
+        aes_256_gcm,
+        chacha20_ietf_poly1305,
+
+        pub fn parse(text: []const u8) !@This() {
+            if (std.mem.eql(u8, text, "aes-128-gcm")) return .aes_128_gcm;
+            if (std.mem.eql(u8, text, "aes-256-gcm")) return .aes_256_gcm;
+            if (std.mem.eql(u8, text, "chacha20-ietf-poly1305")) return .chacha20_ietf_poly1305;
+            return error.UnsupportedMethod;
+        }
+    };
 };
 
-pub const Method = enum {
-    aes_128_gcm,
-    aes_256_gcm,
-    chacha20_ietf_poly1305,
+pub const Mode = if (@hasDecl(root, "core")) root.core.Mode else compat.Mode;
 
-    pub fn parse(text: []const u8) !Method {
-        if (std.mem.eql(u8, text, "aes-128-gcm")) return .aes_128_gcm;
-        if (std.mem.eql(u8, text, "aes-256-gcm")) return .aes_256_gcm;
-        if (std.mem.eql(u8, text, "chacha20-ietf-poly1305")) return .chacha20_ietf_poly1305;
-        return error.UnsupportedMethod;
-    }
-};
+pub const Method = if (@hasDecl(root, "crypto")) root.crypto.Method else compat.Method;
 
 pub const Role = enum {
     local,
