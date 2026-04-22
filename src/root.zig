@@ -7,7 +7,11 @@ pub const core = struct {
     pub const Address = @import("core/address.zig").Address;
 };
 pub const config = struct {};
-pub const crypto = struct {};
+pub const crypto = struct {
+    pub const Method = @import("crypto/methods.zig").Method;
+    pub const deriveClassicMasterKey = @import("crypto/kdf.zig").deriveClassicMasterKey;
+    pub const deriveSessionSubkey = @import("crypto/kdf.zig").deriveSessionSubkey;
+};
 pub const security = struct {};
 pub const wire = struct {};
 pub const frontend = struct {};
