@@ -1,0 +1,13 @@
+.{
+    .name = .shadowsocks_zig,
+    .version = "0.1.0",
+    .fingerprint = 0x5be5220070e8afa8,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "test",
+    },
+}
