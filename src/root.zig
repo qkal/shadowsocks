@@ -1,6 +1,11 @@
 pub const project_name = "shadowsocks-zig";
 
-pub const core = struct {};
+pub const core = struct {
+    pub const constants = @import("core/constants.zig");
+    pub const errors = @import("core/errors.zig");
+    pub const Mode = @import("core/mode.zig").Mode;
+    pub const Address = @import("core/address.zig").Address;
+};
 pub const config = struct {};
 pub const crypto = struct {};
 pub const security = struct {};
