@@ -51,7 +51,7 @@ pub fn normalize(allocator: std.mem.Allocator, input: []const u8) ![]u8 {
                     try comma_ws.append(allocator, c);
                     continue;
                 },
-                '}' , ']' => {
+                '}', ']' => {
                     try out.appendSlice(allocator, comma_ws.items);
                     comma_ws.clearRetainingCapacity();
                     pending_comma = false;
