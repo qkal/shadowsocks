@@ -25,7 +25,7 @@ pub const Address = union(enum) {
     pub fn host(self: Address) []const u8 {
         return switch (self) {
             .domain => |addr| addr.host,
-            else => "",
+            else => unreachable,
         };
     }
 };
