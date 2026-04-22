@@ -1,139 +1,9 @@
 const std = @import("std");
-const Root = @import("root");
+const constants = @import("../core/constants.zig");
+const kdf = @import("../crypto/kdf.zig");
+const aead = @import("../crypto/aead.zig");
 
-const compat = struct {
-    pub const constants = struct {
-        pub const max_tcp_packet_size: usize = 0x3fff;
-    };
-
-    pub const Method = enum {
-        aes_128_gcm,
-        aes_256_gcm,
-        chacha20_ietf_poly1305,
-
-        pub fn keyLen(self: @This()) usize {
-            return switch (self) {
-                .aes_128_gcm => 16,
-                .aes_256_gcm => 32,
-                .chacha20_ietf_poly1305 => 32,
-            };
-        }
-
-        pub fn saltLen(self: @This()) usize {
-            return self.keyLen();
-        }
-
-        pub fn tagLen(self: @This()) usize {
-            _ = self;
-            return 16;
-        }
-    };
-
-    const HmacSha1 = std.crypto.auth.hmac.Hmac(std.crypto.hash.Sha1);
-    const HkdfSha1 = std.crypto.kdf.hkdf.Hkdf(HmacSha1);
-    const aes_gcm = std.crypto.aead.aes_gcm;
-    const chacha_poly = std.crypto.aead.chacha_poly;
-
-    pub fn deriveSessionSubkey(master_key: []const u8, salt: []const u8, out: []u8) !void {
-        if (out.len == 0) return;
-        const prk = HkdfSha1.extract(salt, master_key);
-        HkdfSha1.expand(out, "ss-subkey", prk);
-    }
-
-    pub fn sealDetached(
-        method: @This().Method,
-        key: []const u8,
-        nonce: []const u8,
-        ad: []const u8,
-        plaintext: []const u8,
-        ciphertext: []u8,
-        tag: []u8,
-    ) !void {
-        if (ciphertext.len != plaintext.len) return error.InvalidLength;
-        switch (method) {
-            .aes_128_gcm => try sealDetachedImpl(aes_gcm.Aes128Gcm, key, nonce, ad, plaintext, ciphertext, tag),
-            .aes_256_gcm => try sealDetachedImpl(aes_gcm.Aes256Gcm, key, nonce, ad, plaintext, ciphertext, tag),
-            .chacha20_ietf_poly1305 => try sealDetachedImpl(chacha_poly.ChaCha20Poly1305, key, nonce, ad, plaintext, ciphertext, tag),
-        }
-    }
-
-    pub fn openDetached(
-        method: @This().Method,
-        key: []const u8,
-        nonce: []const u8,
-        ad: []const u8,
-        ciphertext: []const u8,
-        tag: []const u8,
-        plaintext: []u8,
-    ) !void {
-        if (plaintext.len != ciphertext.len) return error.InvalidLength;
-        switch (method) {
-            .aes_128_gcm => try openDetachedImpl(aes_gcm.Aes128Gcm, key, nonce, ad, ciphertext, tag, plaintext),
-            .aes_256_gcm => try openDetachedImpl(aes_gcm.Aes256Gcm, key, nonce, ad, ciphertext, tag, plaintext),
-            .chacha20_ietf_poly1305 => try openDetachedImpl(chacha_poly.ChaCha20Poly1305, key, nonce, ad, ciphertext, tag, plaintext),
-        }
-    }
-
-    fn sealDetachedImpl(
-        comptime Aead: type,
-        key: []const u8,
-        nonce: []const u8,
-        ad: []const u8,
-        plaintext: []const u8,
-        ciphertext: []u8,
-        tag: []u8,
-    ) !void {
-        if (key.len != Aead.key_length or nonce.len != Aead.nonce_length or tag.len != Aead.tag_length) {
-            return error.InvalidLength;
-        }
-
-        var key_buf: [Aead.key_length]u8 = undefined;
-        var nonce_buf: [Aead.nonce_length]u8 = undefined;
-        var tag_buf: [Aead.tag_length]u8 = undefined;
-        defer std.crypto.secureZero(u8, @volatileCast(key_buf[0..]));
-        defer std.crypto.secureZero(u8, @volatileCast(nonce_buf[0..]));
-        defer std.crypto.secureZero(u8, @volatileCast(tag_buf[0..]));
-
-        std.mem.copyForwards(u8, key_buf[0..], key);
-        std.mem.copyForwards(u8, nonce_buf[0..], nonce);
-
-        Aead.encrypt(ciphertext, &tag_buf, plaintext, ad, nonce_buf, key_buf);
-        std.mem.copyForwards(u8, tag, tag_buf[0..]);
-    }
-
-    fn openDetachedImpl(
-        comptime Aead: type,
-        key: []const u8,
-        nonce: []const u8,
-        ad: []const u8,
-        ciphertext: []const u8,
-        tag: []const u8,
-        plaintext: []u8,
-    ) !void {
-        if (key.len != Aead.key_length or nonce.len != Aead.nonce_length or tag.len != Aead.tag_length) {
-            return error.InvalidLength;
-        }
-
-        var key_buf: [Aead.key_length]u8 = undefined;
-        var nonce_buf: [Aead.nonce_length]u8 = undefined;
-        var tag_buf: [Aead.tag_length]u8 = undefined;
-        defer std.crypto.secureZero(u8, @volatileCast(key_buf[0..]));
-        defer std.crypto.secureZero(u8, @volatileCast(nonce_buf[0..]));
-        defer std.crypto.secureZero(u8, @volatileCast(tag_buf[0..]));
-
-        std.mem.copyForwards(u8, key_buf[0..], key);
-        std.mem.copyForwards(u8, nonce_buf[0..], nonce);
-        std.mem.copyForwards(u8, tag_buf[0..], tag);
-
-        Aead.decrypt(plaintext, ciphertext, tag_buf, ad, nonce_buf, key_buf) catch {
-            return error.AuthenticationFailed;
-        };
-    }
-};
-
-const constants = if (@hasDecl(Root, "core")) Root.core.constants else compat.constants;
-pub const Method = if (@hasDecl(Root, "crypto")) Root.crypto.Method else compat.Method;
-const crypto = if (@hasDecl(Root, "crypto")) Root.crypto else compat;
+pub const Method = @import("../crypto/methods.zig").Method;
 
 pub fn encodeRequest(
     method: Method,
@@ -151,7 +21,7 @@ pub fn encodeRequest(
 
     var subkey: [32]u8 = [_]u8{0} ** 32;
     defer std.crypto.secureZero(u8, @volatileCast(subkey[0..]));
-    try crypto.deriveSessionSubkey(master_key, salt, subkey[0..method.keyLen()]);
+    try kdf.deriveSessionSubkey(master_key, salt, subkey[0..method.keyLen()]);
 
     std.mem.copyForwards(u8, out[0..salt.len], salt);
 
@@ -165,7 +35,7 @@ pub fn encodeRequest(
     payload_nonce[0] = 1;
 
     var length_tag: [16]u8 = undefined;
-    try crypto.sealDetached(
+    try aead.sealDetached(
         method,
         subkey[0..method.keyLen()],
         length_nonce[0..],
@@ -177,7 +47,7 @@ pub fn encodeRequest(
     std.mem.copyForwards(u8, out[salt.len + 2 .. salt.len + 2 + tag_len], length_tag[0..tag_len]);
 
     const payload_start = salt.len + 2 + tag_len;
-    try crypto.sealDetached(
+    try aead.sealDetached(
         method,
         subkey[0..method.keyLen()],
         payload_nonce[0..],
@@ -206,14 +76,14 @@ pub fn decodeRequest(
 
     var subkey: [32]u8 = [_]u8{0} ** 32;
     defer std.crypto.secureZero(u8, @volatileCast(subkey[0..]));
-    try crypto.deriveSessionSubkey(master_key, salt, subkey[0..method.keyLen()]);
+    try kdf.deriveSessionSubkey(master_key, salt, subkey[0..method.keyLen()]);
 
     var length_nonce = [_]u8{0} ** 12;
     var payload_nonce = [_]u8{0} ** 12;
     payload_nonce[0] = 1;
 
     var length_field: [2]u8 = undefined;
-    try crypto.openDetached(
+    try aead.openDetached(
         method,
         subkey[0..method.keyLen()],
         length_nonce[0..],
@@ -222,6 +92,10 @@ pub fn decodeRequest(
         input[salt_len + 2 .. salt_len + 2 + tag_len],
         length_field[0..],
     );
+
+    // Classic Shadowsocks chunk length is a 14-bit big-endian value; the top
+    // two bits of the 16-bit length field MUST be zero per the spec.
+    if ((length_field[0] & 0xC0) != 0) return error.InvalidChunkLength;
 
     const payload_len = (@as(usize, length_field[0]) << 8) | @as(usize, length_field[1]);
     if (payload_len > constants.max_tcp_packet_size) return error.PacketTooLarge;
@@ -233,7 +107,7 @@ pub fn decodeRequest(
     const tag_end = tag_start + tag_len;
     if (input.len < tag_end) return error.Truncated;
 
-    try crypto.openDetached(
+    try aead.openDetached(
         method,
         subkey[0..method.keyLen()],
         payload_nonce[0..],
@@ -266,5 +140,54 @@ test "tcp chunk rejects payload over max size" {
     try std.testing.expectError(
         error.PacketTooLarge,
         encodeRequest(.aes_128_gcm, big[0..16], big[0..16], big[0..], out[0..]),
+    );
+}
+
+test "tcp chunk rejects length field with non-zero top two bits" {
+    const method = Method.aes_128_gcm;
+    const master = [_]u8{0x77} ** 16;
+    const salt = [_]u8{0x88} ** 16;
+
+    // Hand-craft a chunk whose plaintext length field has the top two bits set
+    // by encrypting a raw two-byte length of 0xC000 ("1100_0000 0000_0000"),
+    // which is over the classic 14-bit limit.
+    const tag_len = method.tagLen();
+    var subkey: [16]u8 = undefined;
+    try kdf.deriveSessionSubkey(master[0..], salt[0..], subkey[0..]);
+
+    var frame: [16 + 2 + 16 + 1 + 16]u8 = undefined;
+    std.mem.copyForwards(u8, frame[0..16], salt[0..]);
+
+    const bad_length = [2]u8{ 0xC0, 0x00 };
+    var length_nonce = [_]u8{0} ** 12;
+    try aead.sealDetached(
+        method,
+        subkey[0..],
+        length_nonce[0..],
+        "",
+        bad_length[0..],
+        frame[16..18],
+        frame[18 .. 18 + tag_len],
+    );
+
+    // Payload bytes after the length tag don't matter for this test; decodeRequest
+    // must reject on the length field before ever touching them.
+    const payload_plain = [_]u8{0x00};
+    var payload_nonce = [_]u8{0} ** 12;
+    payload_nonce[0] = 1;
+    try aead.sealDetached(
+        method,
+        subkey[0..],
+        payload_nonce[0..],
+        "",
+        payload_plain[0..],
+        frame[18 + tag_len .. 18 + tag_len + 1],
+        frame[18 + tag_len + 1 .. 18 + tag_len + 1 + tag_len],
+    );
+
+    var scratch: [1]u8 = undefined;
+    try std.testing.expectError(
+        error.InvalidChunkLength,
+        decodeRequest(method, master[0..], frame[0..], scratch[0..]),
     );
 }

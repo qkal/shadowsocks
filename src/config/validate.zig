@@ -1,12 +1,7 @@
 const std = @import("std");
-const root = @import("root");
 const raw = @import("raw.zig");
 const runtime = @import("runtime.zig");
-
-const defaults = if (@hasDecl(root, "core")) root.core.constants else struct {
-    pub const default_udp_timeout_secs: u64 = 300;
-    pub const default_udp_max_associations: usize = 512;
-};
+const defaults = @import("../core/constants.zig");
 
 pub fn loadFromSlice(allocator: std.mem.Allocator, role: runtime.Role, input: []const u8) !runtime.RuntimeConfig {
     const parsed = try raw.parseRaw(allocator, input);
