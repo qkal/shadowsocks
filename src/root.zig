@@ -17,8 +17,16 @@ pub const crypto = struct {
     pub const deriveSessionSubkey = @import("crypto/kdf.zig").deriveSessionSubkey;
 };
 pub const security = struct {};
-pub const wire = struct {};
-pub const frontend = struct {};
+pub const wire = struct {
+    pub const socks_addr = @import("wire/socks_addr.zig");
+};
+pub const frontend = struct {
+    pub const socks5 = struct {
+        pub const handshake = @import("frontend/socks5/handshake.zig");
+        pub const tcp_connect = @import("frontend/socks5/tcp_connect.zig");
+        pub const udp_associate = @import("frontend/socks5/udp_associate.zig");
+    };
+};
 pub const net = struct {};
 pub const app = struct {};
 
