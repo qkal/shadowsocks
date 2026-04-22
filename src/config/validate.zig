@@ -1,6 +1,12 @@
 const std = @import("std");
+const root = @import("root");
 const raw = @import("raw.zig");
 const runtime = @import("runtime.zig");
+
+const defaults = if (@hasDecl(root, "core")) root.core.constants else struct {
+    pub const default_udp_timeout_secs: u64 = 300;
+    pub const default_udp_max_associations: usize = 512;
+};
 
 pub fn loadFromSlice(allocator: std.mem.Allocator, role: runtime.Role, input: []const u8) !runtime.RuntimeConfig {
     const parsed = try raw.parseRaw(allocator, input);
@@ -27,8 +33,8 @@ pub fn fromRaw(allocator: std.mem.Allocator, role: runtime.Role, cfg: raw.RawCon
     errdefer allocator.free(runtime_server_host);
 
     const timeout_secs = cfg.timeout;
-    const udp_timeout_secs = cfg.udp_timeout orelse 300;
-    const udp_max_associations = cfg.udp_max_associations orelse 512;
+    const udp_timeout_secs = cfg.udp_timeout orelse defaults.default_udp_timeout_secs;
+    const udp_max_associations = cfg.udp_max_associations orelse defaults.default_udp_max_associations;
     const no_delay = cfg.no_delay orelse false;
     const keep_alive_secs = cfg.keep_alive;
 
