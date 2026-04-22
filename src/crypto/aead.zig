@@ -59,6 +59,9 @@ fn sealDetachedImpl(
     var key_buf: [Aead.key_length]u8 = undefined;
     var nonce_buf: [Aead.nonce_length]u8 = undefined;
     var tag_buf: [Aead.tag_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, @volatileCast(key_buf[0..]));
+    defer std.crypto.secureZero(u8, @volatileCast(nonce_buf[0..]));
+    defer std.crypto.secureZero(u8, @volatileCast(tag_buf[0..]));
 
     std.mem.copyForwards(u8, key_buf[0..], key);
     std.mem.copyForwards(u8, nonce_buf[0..], nonce);
@@ -81,6 +84,9 @@ fn openDetachedImpl(
     var key_buf: [Aead.key_length]u8 = undefined;
     var nonce_buf: [Aead.nonce_length]u8 = undefined;
     var tag_buf: [Aead.tag_length]u8 = undefined;
+    defer std.crypto.secureZero(u8, @volatileCast(key_buf[0..]));
+    defer std.crypto.secureZero(u8, @volatileCast(nonce_buf[0..]));
+    defer std.crypto.secureZero(u8, @volatileCast(tag_buf[0..]));
 
     std.mem.copyForwards(u8, key_buf[0..], key);
     std.mem.copyForwards(u8, nonce_buf[0..], nonce);
