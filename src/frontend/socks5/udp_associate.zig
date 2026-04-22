@@ -91,6 +91,7 @@ pub const Header = struct {
 
 pub fn readUdpAssociateHeader(input: []const u8) !Header {
     if (input.len < 3) return error.Truncated;
+    if (input[0] != 0 or input[1] != 0) return error.InvalidReservedField;
     if (input[2] != 0) return error.UnsupportedFragmentation;
 
     const decoded = try socks_addr.readAddress(input[3..]);
@@ -107,4 +108,13 @@ test "udp associate rejects fragmented packets" {
     };
 
     try std.testing.expectError(error.UnsupportedFragmentation, readUdpAssociateHeader(&packet));
+}
+
+test "udp associate rejects non-zero reserved bytes" {
+    const packet = [_]u8{
+        0x01, 0x00, 0x00, 0x01, 0x7f,
+        0x00, 0x00, 0x01, 0x1f, 0x90,
+    };
+
+    try std.testing.expectError(error.InvalidReservedField, readUdpAssociateHeader(&packet));
 }
