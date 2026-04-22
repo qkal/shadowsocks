@@ -6,7 +6,11 @@ pub const core = struct {
     pub const Mode = @import("core/mode.zig").Mode;
     pub const Address = @import("core/address.zig").Address;
 };
-pub const config = struct {};
+pub const config = struct {
+    pub const Role = @import("config/runtime.zig").Role;
+    pub const RuntimeConfig = @import("config/runtime.zig").RuntimeConfig;
+    pub const loadFromSlice = @import("config/validate.zig").loadFromSlice;
+};
 pub const crypto = struct {
     pub const Method = @import("crypto/methods.zig").Method;
     pub const deriveClassicMasterKey = @import("crypto/kdf.zig").deriveClassicMasterKey;
