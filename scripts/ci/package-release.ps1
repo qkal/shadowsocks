@@ -19,7 +19,7 @@ $DistRoot = Join-Path $RepoRoot 'dist'
 $StageRoot = Join-Path $DistRoot $PlatformLabel
 $BundleName = "shadowsocks-$PlatformLabel"
 $BundleDir = Join-Path $StageRoot $BundleName
-$ExeSuffix = if (Test-Path (Join-Path $BinDir 'sslocal.exe')) { '.exe' } else { '' }
+$ExeSuffix = if ($PlatformLabel -like 'windows-*') { '.exe' } else { '' }
 
 $ExpectedBinaries = @(
     (Join-Path $BinDir "sslocal$ExeSuffix"),
@@ -32,7 +32,8 @@ foreach ($Path in $ExpectedBinaries) {
     }
 }
 
-Remove-Item -LiteralPath $StageRoot -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Path $StageRoot -Force | Out-Null
+Remove-Item -LiteralPath $BundleDir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $BundleDir -Force | Out-Null
 
 Copy-Item -LiteralPath $ExpectedBinaries -Destination $BundleDir
@@ -51,12 +52,41 @@ $ArchivePath = switch ($ArchiveFormat) {
     'tar.gz' { Join-Path $StageRoot "$BundleName.tar.gz" }
 }
 
+Remove-Item -LiteralPath $ArchivePath -Force -ErrorAction SilentlyContinue
+
 if ($ArchiveFormat -eq 'zip') {
     Compress-Archive -Path $BundleDir -DestinationPath $ArchivePath -Force
 } else {
     & tar -czf $ArchivePath -C $StageRoot $BundleName
     if ($LASTEXITCODE -ne 0) {
         throw "tar failed with exit code $LASTEXITCODE"
+    }
+}
+
+$ExpectedArchiveEntries = @(
+    "$BundleName/README.txt",
+    "$BundleName/sslocal$ExeSuffix",
+    "$BundleName/ssserver$ExeSuffix"
+)
+
+if ($ArchiveFormat -eq 'zip') {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $ZipArchive = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+    try {
+        $ArchiveEntries = $ZipArchive.Entries | ForEach-Object { $_.FullName }
+    } finally {
+        $ZipArchive.Dispose()
+    }
+} else {
+    $ArchiveEntries = & tar -tzf $ArchivePath
+    if ($LASTEXITCODE -ne 0) {
+        throw "tar verification failed with exit code $LASTEXITCODE"
+    }
+}
+
+foreach ($ExpectedEntry in $ExpectedArchiveEntries) {
+    if ($ExpectedEntry -notin $ArchiveEntries) {
+        throw "Archive verification failed: missing '$ExpectedEntry' in $ArchivePath"
     }
 }
 
