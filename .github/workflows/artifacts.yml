@@ -1,0 +1,54 @@
+name: Build Artifacts
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform_label: linux-x86_64
+            archive_format: tar.gz
+            archive_file: shadowsocks-linux-x86_64.tar.gz
+          - runner: windows-2025
+            platform_label: windows-x86_64
+            archive_format: zip
+            archive_file: shadowsocks-windows-x86_64.zip
+          - runner: macos-15
+            platform_label: macos-aarch64
+            archive_format: tar.gz
+            archive_file: shadowsocks-macos-aarch64.tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.16.0
+
+      - name: Build release binaries
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Package archive
+        shell: pwsh
+        run: |
+          ./scripts/ci/package-release.ps1 -PlatformLabel '${{ matrix.platform_label }}' -ArchiveFormat '${{ matrix.archive_format }}' -CommitSha '${{ github.sha }}'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: shadowsocks-${{ matrix.platform_label }}
+          path: dist/${{ matrix.platform_label }}/${{ matrix.archive_file }}
+          if-no-files-found: error
+          retention-days: 14
