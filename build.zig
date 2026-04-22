@@ -35,8 +35,19 @@ pub fn build(b: *std.Build) void {
     const pkg_tests = b.addTest(.{ .root_module = pkg });
     const run_pkg_tests = b.addRunArtifact(pkg_tests);
 
-    const test_step = b.step("test", "Run package tests");
+    const integration_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/integration/tcp_happy_path.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "shadowsocks_zig", .module = pkg }},
+        }),
+    });
+    const run_integration_tests = b.addRunArtifact(integration_tests);
+
+    const test_step = b.step("test", "Run package and integration tests");
     test_step.dependOn(&run_pkg_tests.step);
+    test_step.dependOn(&run_integration_tests.step);
 
     const check_step = b.step("check", "Build sslocal and ssserver");
     check_step.dependOn(&sslocal.step);
