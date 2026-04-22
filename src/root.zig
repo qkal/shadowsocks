@@ -13,10 +13,19 @@ pub const config = struct {
 };
 pub const crypto = struct {
     pub const Method = @import("crypto/methods.zig").Method;
+    pub const aead = @import("crypto/aead.zig");
+    pub const sealDetached = aead.sealDetached;
+    pub const openDetached = aead.openDetached;
     pub const deriveClassicMasterKey = @import("crypto/kdf.zig").deriveClassicMasterKey;
     pub const deriveSessionSubkey = @import("crypto/kdf.zig").deriveSessionSubkey;
 };
-pub const security = struct {};
+pub const security = struct {
+    pub const replay = @import("security/replay.zig");
+    pub const SaltKey = replay.SaltKey;
+    pub const SaltReplay = replay.SaltReplay;
+    pub const zeroize = @import("security/zeroize.zig");
+    pub const wipe = zeroize.wipe;
+};
 pub const wire = struct {
     pub const socks_addr = @import("wire/socks_addr.zig");
 };
