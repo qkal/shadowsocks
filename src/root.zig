@@ -11,6 +11,10 @@ pub const config = struct {
     pub const RuntimeConfig = @import("config/runtime.zig").RuntimeConfig;
     pub const loadFromSlice = @import("config/validate.zig").loadFromSlice;
 };
+pub const cli = struct {
+    pub const loadConfigFromArgs = @import("cli/args.zig").loadConfigFromArgs;
+    pub const fatal = @import("cli/diag.zig").fatal;
+};
 pub const crypto = struct {
     pub const Method = @import("crypto/methods.zig").Method;
     pub const aead = @import("crypto/aead.zig");
@@ -37,8 +41,23 @@ pub const frontend = struct {
         pub const udp_associate = @import("frontend/socks5/udp_associate.zig");
     };
 };
-pub const net = struct {};
-pub const app = struct {};
+pub const net = struct {
+    pub const dns = @import("net/dns.zig");
+    pub const socket_opts = @import("net/socket_opts.zig");
+    pub const tcp = @import("net/tcp.zig");
+};
+pub const app = struct {
+    pub const local = struct {
+        pub const tcp_session = @import("app/local/tcp_session.zig");
+        pub const service = @import("app/local/service.zig");
+    };
+    pub const server = struct {
+        pub const tcp_session = @import("app/server/tcp_session.zig");
+        pub const service = @import("app/server/service.zig");
+    };
+    pub const runLocal = local.service.runLocal;
+    pub const runServer = server.service.runServer;
+};
 
 const std = @import("std");
 
