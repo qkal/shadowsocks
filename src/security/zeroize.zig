@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub fn wipe(bytes: []u8) void {
-    @memset(bytes, 0);
+    std.crypto.secureZero(u8, @volatileCast(bytes));
 }
