@@ -163,7 +163,7 @@ Expected:
 - Modify: `src/cli/args.zig`
 - Modify: `src/root.zig`
 - Test: `src/wire/ss_url.zig`
-- Test: `src/cli/args.zig`
+- Test: package-level config/CLI merge behavior via `zig build test`
 
 - [ ] **Step 1: Write the failing SIP002 and merge-precedence tests**
 
@@ -224,7 +224,7 @@ Run:
 
 ```powershell
 zig test src/wire/ss_url.zig
-zig test src/cli/args.zig
+zig build test
 ```
 
 Expected:
@@ -359,8 +359,8 @@ Run:
 
 ```powershell
 zig test src/wire/ss_url.zig
-zig test src/cli/args.zig
 zig build test
+zig build check
 ```
 
 Expected:
