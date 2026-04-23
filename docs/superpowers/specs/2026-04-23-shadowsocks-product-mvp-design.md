@@ -23,6 +23,7 @@ The MVP supports:
 - explicit unsupported-feature diagnostics
 - Linux Docker packaging for common server deployments
 - diagnostics tooling for CI, development, and operator troubleshooting
+- release checksums plus provenance and SBOM attestations for shipped artifacts
 
 The MVP does not include full upstream feature parity. It intentionally defers manager mode, plugins, ACL, HTTP local, tunnel mode, redir, TUN, DNS relay, fake DNS, service wrappers, multi-server balancing, deprecated stream ciphers, and AEAD-2022.
 
@@ -43,6 +44,7 @@ The target is a usable replacement for ordinary Shadowsocks deployments, not a c
 - Linux Docker image build and smoke test.
 - Linux and Windows CI validation and release artifacts.
 - Rust interop tests for supported methods and TCP/UDP flows.
+- release provenance, SBOM generation, and container vulnerability scanning in CI.
 
 ### 2.2 Deferred
 
@@ -98,6 +100,8 @@ The config layer supports common single-server fields:
 
 For `ssserver`, local-only fields from shared config files are tolerated and ignored. Unsupported advanced fields are rejected with diagnostics that name the field.
 
+The Zig MVP only guarantees JSON5-style comments and trailing commas. If a config relies on broader JSON5 constructs accepted by `shadowsocks-rust`, such as unquoted keys or single-quoted strings, the parser must fail with a targeted compatibility diagnostic instead of a generic parse error.
+
 Rejected MVP fields include:
 
 - `servers`
@@ -129,6 +133,8 @@ Required flags:
 - `--verbose` or `--log-level`
 
 Config files, SIP002 URLs, and CLI overrides merge into one normalized runtime config. CLI overrides win over file and URL input. The merge rules must be tested.
+
+For production guidance, the documentation should recommend config files or mounted secret files over passing passwords directly on the command line. `-k` remains supported for compatibility, but it should be documented as a lower-safety input path.
 
 ### 3.4 Rust Interop
 
@@ -261,7 +267,9 @@ Owns release and deployment assets:
 - GitHub Actions workflows
 - Linux and Windows archive packaging
 - checksums
+- provenance and SBOM attestations
 - Dockerfile and container smoke test
+- container vulnerability scanning
 - README deployment examples
 
 Docker is packaging, not a runtime architecture layer.
@@ -312,6 +320,15 @@ Security behavior:
 - wrong password and wrong method fail without plaintext leakage
 - sensitive buffers are zeroized where practical
 - unsupported ciphers fail at config/CLI parsing time
+- passwords, derived keys, salts, decrypted payloads, and full `ss://` URIs are never written to logs
+- untrusted values included in logs are sanitized to avoid log-injection problems
+
+Operational behavior:
+
+- graceful shutdown is required for Linux signals such as `SIGTERM` and `SIGINT`
+- graceful shutdown is required for Windows console control events
+- listener startup is fail-fast and partial startup must clean up already-open resources
+- `UDP ASSOCIATE` lifetime follows RFC 1928 by terminating with its TCP control connection
 
 UDP behavior:
 
@@ -327,19 +344,38 @@ The MVP adds Docker as a Linux deployment target.
 Docker requirements:
 
 - build a small Linux `ssserver` image
-- optionally build an `sslocal` image from the same binary bundle
-- mount config at `/etc/shadowsocks/config.json`
+- build an `sslocal` image from the same binary bundle or the same multi-target Dockerfile
+- accept the upstream-compatible config mount path `/etc/shadowsocks-rust/config.json`
+- optionally support `/etc/shadowsocks/config.json` as a compatibility alias, but the documented default should match upstream to reduce migration friction
 - expose TCP and UDP server ports
 - run as a normal foreground process
+- use a trusted small base image
+- run as a non-root `USER` with an explicit UID/GID where practical
+- include a `HEALTHCHECK`
+- avoid requiring extra Linux capabilities beyond ordinary bind/connect behavior
 - log startup and runtime diagnostics to stderr/stdout
 - include a CI container smoke test with the example config
+
+Container deployment guidance:
+
+- Docker examples should document that IPv6 is not available in Docker containers by default unless the operator enables it
+- deployment examples should prefer read-only root filesystem and minimal writable paths when the runtime does not need mutable state
+- the image should not depend on an interactive shell for normal startup or health checks
 
 Native release requirements:
 
 - Linux x86_64 archive containing `sslocal`, `ssserver`, README, and checksums
 - Windows x86_64 archive containing `sslocal.exe`, `ssserver.exe`, README, and checksums
+- signed provenance attestation for release binaries
+- SBOM attached to release artifacts
 - archive verification in CI
 - release workflow documentation
+
+Container release requirements:
+
+- container image digest is recorded and published
+- container image receives vulnerability analysis before release
+- container image provenance and SBOM are attached when publishing to a registry
 
 The current repository already has native archive packaging through GitHub Actions and `scripts/ci/package-release.ps1`. The product MVP should align that surface with the Linux + Windows release promise.
 
@@ -362,12 +398,20 @@ Runtime diagnostics distinguish:
 
 `--verbose` or `--log-level debug` enables connection lifecycle and UDP association messages without logging decrypted payload contents.
 
+Debug logs must avoid:
+
+- passwords and derived keys
+- raw config blobs containing secrets
+- full `ss://` URLs
+- unsanitized user-controlled strings that could inject line breaks or delimiters into logs
+
 ### 8.2 Development Diagnostics
 
 Add a diagnostics build lane:
 
 - `zig build diagnose`
 - `zig build fuzz`
+- `docker build --check .` for Dockerfile linting when a Dockerfile is present
 
 `zig build diagnose` should run formatting, package tests, integration tests, config rejection tests, CLI tests, and interop smoke checks where configured.
 
@@ -382,6 +426,8 @@ Add a diagnostics build lane:
 - UDP packet decoding
 
 Linux CI should include selected diagnostics runs under tools such as Valgrind and ThreadSanitizer where practical. These tools are development and CI dependencies, not runtime dependencies.
+
+Release CI should also generate and verify artifact attestations and, for published container images, perform vulnerability analysis before promotion.
 
 ### 8.3 Network Debugging Recipes
 
@@ -426,6 +472,8 @@ Required integration coverage:
 - unexpected UDP source endpoint rejection
 - CLI config loading and override precedence
 - SIP002 import into runtime config
+- graceful shutdown on Linux and Windows
+- repeated connection churn without descriptor or thread leaks
 
 ### 9.3 Rust Interop Tests
 
@@ -451,10 +499,15 @@ Required packaging checks:
 - Linux release archive contains both binaries and metadata
 - Windows release archive contains both binaries and metadata
 - checksums are generated
+- provenance attestations are generated and verifiable
+- SBOM artifacts are generated and attached
 - archives can be listed and verified
 - Docker image builds
 - Docker container starts with the example config
+- Docker image runs as non-root
+- Docker image health check passes
 - container exposes the documented TCP and UDP ports
+- container vulnerability scan result is reviewed before release publication
 
 ### 9.5 Acceptance Criteria
 
@@ -464,10 +517,13 @@ The MVP is accepted when:
 - `zig build check` passes
 - `zig build test` passes
 - `zig build diagnose` passes on supported CI lanes
+- `docker build --check .` passes once Docker packaging exists
 - Linux and Windows CI produce validated artifacts
 - Docker image build and smoke test pass
+- release provenance and SBOM attestations are generated for shipped artifacts
 - Rust interop matrix passes for all supported methods over TCP and UDP
 - README documents supported scope, Docker usage, native usage, diagnostics, and non-goals
+- README documents safe secret-handling guidance for production use
 - unsupported upstream features fail with explicit diagnostics
 
 ## 10. Risks And Mitigations
@@ -502,6 +558,18 @@ Risk: debug logging exposes sensitive data or overwhelms users.
 
 Mitigation: log lifecycle and error context, never decrypted payloads or passwords, and keep debug logging opt-in.
 
+### 10.6 Container Hardening Drift
+
+Risk: a convenient MVP Docker image drifts into root execution, weak health checks, or unscanned base-image vulnerabilities.
+
+Mitigation: require non-root execution, health checks, trusted minimal base images, CI build checks, and vulnerability analysis before release publication.
+
+### 10.7 Supply Chain Blind Spots
+
+Risk: downloadable binaries and published images lack enough provenance for downstream consumers to trust how they were built.
+
+Mitigation: generate checksums, provenance attestations, and SBOMs for release artifacts and verify them in CI.
+
 ## 11. Implementation Sequence
 
 The implementation plan should update the existing MVP plan rather than starting from scratch.
@@ -515,9 +583,10 @@ Recommended phases:
 5. Finish local/server TCP relay.
 6. Finish local/server UDP relay and association cleanup.
 7. Add Rust interop matrix and negative tests.
-8. Add Linux + Windows packaging checks and checksums.
+8. Add Linux + Windows packaging checks, checksums, provenance, and SBOM support.
 9. Add Dockerfile, example config path, and container smoke test.
-10. Add `diagnose` and `fuzz` build steps.
-11. Update README with supported scope, usage, Docker, diagnostics, and non-goals.
+10. Add Docker health checks, non-root runtime, and image scanning workflow.
+11. Add `diagnose` and `fuzz` build steps.
+12. Update README with supported scope, usage, Docker, diagnostics, safe secret handling, and non-goals.
 
 Implementation must stay inside this product MVP unless a later design explicitly changes scope.
