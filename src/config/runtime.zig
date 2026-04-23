@@ -72,13 +72,18 @@ pub const RuntimeConfig = struct {
     }
 
     pub fn applyUrlOverrides(self: *RuntimeConfig, allocator: std.mem.Allocator, parsed: anytype) !void {
-        try self.replacePassword(allocator, parsed.password);
-
         const new_host = try allocator.dupe(u8, parsed.host);
+        errdefer allocator.free(new_host);
+        const new_password = try allocator.dupe(u8, parsed.password);
+        errdefer allocator.free(new_password);
+        const new_method = try Method.parse(parsed.method);
+
+        allocator.free(self.password);
+        self.password = new_password;
         allocator.free(self.server.bind_host);
         self.server.bind_host = new_host;
         self.server.bind_port = parsed.port;
-        self.method = try Method.parse(parsed.method);
+        self.method = new_method;
     }
 
     pub fn replacePassword(self: *RuntimeConfig, allocator: std.mem.Allocator, password_text: []const u8) !void {

@@ -37,11 +37,19 @@ pub fn parse(allocator: std.mem.Allocator, input: []const u8) !ParsedUrl {
     const colon_index = std.mem.indexOfScalar(u8, decoded, ':') orelse return error.InvalidUserInfo;
     const last_colon = std.mem.lastIndexOfScalar(u8, host_port, ':') orelse return error.InvalidAuthority;
 
+    const method = try allocator.dupe(u8, decoded[0..colon_index]);
+    errdefer allocator.free(method);
+    const password = try allocator.dupe(u8, decoded[colon_index + 1 ..]);
+    errdefer allocator.free(password);
+    const host = try allocator.dupe(u8, host_port[0..last_colon]);
+    errdefer allocator.free(host);
+    const port = try std.fmt.parseInt(u16, host_port[last_colon + 1 ..], 10);
+
     return .{
-        .method = try allocator.dupe(u8, decoded[0..colon_index]),
-        .password = try allocator.dupe(u8, decoded[colon_index + 1 ..]),
-        .host = try allocator.dupe(u8, host_port[0..last_colon]),
-        .port = try std.fmt.parseInt(u16, host_port[last_colon + 1 ..], 10),
+        .method = method,
+        .password = password,
+        .host = host,
+        .port = port,
         .tag = tag,
     };
 }
@@ -56,4 +64,11 @@ test "parse SIP002 URL into method password host port and tag" {
     try std.testing.expectEqualStrings("127.0.0.1", parsed.host);
     try std.testing.expectEqual(@as(u16, 8388), parsed.port);
     try std.testing.expectEqualStrings("demo", parsed.tag.?);
+}
+
+test "reject SIP002 URL without authority separator" {
+    try std.testing.expectError(
+        error.InvalidAuthority,
+        parse(std.testing.allocator, "ss://YWVzLTEyOC1nY206dGVzdA==127.0.0.1:8388"),
+    );
 }
