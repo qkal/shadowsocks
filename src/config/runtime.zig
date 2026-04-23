@@ -70,4 +70,32 @@ pub const RuntimeConfig = struct {
         }
         allocator.free(self.server.bind_host);
     }
+
+    pub fn applyUrlOverrides(self: *RuntimeConfig, allocator: std.mem.Allocator, parsed: anytype) !void {
+        try self.replacePassword(allocator, parsed.password);
+
+        const new_host = try allocator.dupe(u8, parsed.host);
+        allocator.free(self.server.bind_host);
+        self.server.bind_host = new_host;
+        self.server.bind_port = parsed.port;
+        self.method = try Method.parse(parsed.method);
+    }
+
+    pub fn replacePassword(self: *RuntimeConfig, allocator: std.mem.Allocator, password_text: []const u8) !void {
+        const new_password = try allocator.dupe(u8, password_text);
+        allocator.free(self.password);
+        self.password = new_password;
+    }
+
+    pub fn replaceServerAddress(self: *RuntimeConfig, allocator: std.mem.Allocator, input: []const u8) !void {
+        const colon = std.mem.lastIndexOfScalar(u8, input, ':') orelse return error.InvalidServerAddress;
+        const new_host = try allocator.dupe(u8, input[0..colon]);
+        errdefer allocator.free(new_host);
+
+        const new_port = try std.fmt.parseInt(u16, input[colon + 1 ..], 10);
+
+        allocator.free(self.server.bind_host);
+        self.server.bind_host = new_host;
+        self.server.bind_port = new_port;
+    }
 };

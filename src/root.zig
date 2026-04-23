@@ -33,6 +33,7 @@ pub const security = struct {
 pub const wire = struct {
     pub const socks_addr = @import("wire/socks_addr.zig");
     pub const ss_tcp = @import("wire/ss_tcp.zig");
+    pub const ss_url = @import("wire/ss_url.zig");
 };
 pub const frontend = struct {
     pub const socks5 = struct {

@@ -1,5 +1,7 @@
 const std = @import("std");
 const ss = @import("shadowsocks_zig");
+pub const config = ss.config;
+pub const wire = ss.wire;
 
 pub fn main(init: std.process.Init) !void {
     var args = try std.process.Args.iterateAllocator(init.minimal.args, init.gpa);
