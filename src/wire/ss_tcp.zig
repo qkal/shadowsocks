@@ -138,24 +138,30 @@ const crypto = if (@hasDecl(Root, "crypto")) Root.crypto else compat;
 pub const Session = struct {
     method: Method,
     master_key: [32]u8 = [_]u8{0} ** 32,
-    key: [32]u8 = [_]u8{0} ** 32,
-    salt: [32]u8 = [_]u8{0} ** 32,
-    salt_len: usize = 0,
-    tx_nonce: [12]u8 = [_]u8{0} ** 12,
-    rx_nonce: [12]u8 = [_]u8{0} ** 12,
+    tx: Direction = .{},
+    rx: Direction = .{},
     sent_salt: bool = false,
     received_salt: bool = false,
+
+    const Direction = struct {
+        key: [32]u8 = [_]u8{0} ** 32,
+        salt: [32]u8 = [_]u8{0} ** 32,
+        salt_len: usize = 0,
+        nonce: [12]u8 = [_]u8{0} ** 12,
+        has_key: bool = false,
+    };
 
     pub fn initClient(method: Method, master_key: []const u8, salt: []const u8) !Session {
         if (master_key.len != method.keyLen() or salt.len != method.saltLen()) return error.InvalidLength;
 
         var self = Session{
             .method = method,
-            .salt_len = salt.len,
         };
         std.mem.copyForwards(u8, self.master_key[0..master_key.len], master_key);
-        std.mem.copyForwards(u8, self.salt[0..salt.len], salt);
-        try crypto.deriveSessionSubkey(master_key, salt, self.key[0..method.keyLen()]);
+        self.tx.salt_len = salt.len;
+        self.tx.has_key = true;
+        std.mem.copyForwards(u8, self.tx.salt[0..salt.len], salt);
+        try crypto.deriveSessionSubkey(master_key, salt, self.tx.key[0..method.keyLen()]);
         return self;
     }
 
@@ -171,66 +177,63 @@ pub const Session = struct {
 
     pub fn writeChunk(self: *Session, payload: []const u8, out: []u8) !usize {
         if (payload.len > constants.max_tcp_packet_size) return error.PacketTooLarge;
+        if (!self.tx.has_key) return error.InvalidState;
 
-        const salt_bytes: usize = if (self.sent_salt) 0 else self.salt_len;
+        const salt_bytes: usize = if (self.sent_salt) 0 else self.tx.salt_len;
         const needed = salt_bytes + encodedChunkLen(self.method, payload.len);
         if (out.len < needed) return error.NoSpaceLeft;
 
-        var next_nonce = self.tx_nonce;
+        var next_nonce = self.tx.nonce;
         var cursor: usize = 0;
         if (!self.sent_salt) {
-            std.mem.copyForwards(u8, out[0..self.salt_len], self.salt[0..self.salt_len]);
-            cursor = self.salt_len;
+            std.mem.copyForwards(u8, out[0..self.tx.salt_len], self.tx.salt[0..self.tx.salt_len]);
+            cursor = self.tx.salt_len;
         }
 
         cursor += try encodeChunk(
             self.method,
-            self.key[0..self.method.keyLen()],
+            self.tx.key[0..self.method.keyLen()],
             &next_nonce,
             payload,
             out[cursor..],
         );
 
-        self.tx_nonce = next_nonce;
+        self.tx.nonce = next_nonce;
         self.sent_salt = true;
         return cursor;
     }
 
     pub fn readChunk(self: *Session, input: []const u8, out: []u8) ![]const u8 {
-        var next_key = self.key;
-        var next_salt = self.salt;
-        var next_salt_len = self.salt_len;
-        var next_nonce = self.rx_nonce;
+        var next_rx = self.rx;
         var next_received_salt = self.received_salt;
         var cursor: usize = 0;
 
         if (!next_received_salt) {
-            next_salt_len = self.method.saltLen();
-            if (input.len < next_salt_len) return error.Truncated;
+            next_rx.salt_len = self.method.saltLen();
+            if (input.len < next_rx.salt_len) return error.Truncated;
 
-            std.mem.copyForwards(u8, next_salt[0..next_salt_len], input[0..next_salt_len]);
+            std.mem.copyForwards(u8, next_rx.salt[0..next_rx.salt_len], input[0..next_rx.salt_len]);
             try crypto.deriveSessionSubkey(
                 self.master_key[0..self.method.keyLen()],
-                next_salt[0..next_salt_len],
-                next_key[0..self.method.keyLen()],
+                next_rx.salt[0..next_rx.salt_len],
+                next_rx.key[0..self.method.keyLen()],
             );
+            next_rx.has_key = true;
 
             next_received_salt = true;
-            cursor = next_salt_len;
+            cursor = next_rx.salt_len;
         }
+        if (!next_rx.has_key) return error.InvalidState;
 
         const plain = try decodeChunk(
             self.method,
-            next_key[0..self.method.keyLen()],
-            &next_nonce,
+            next_rx.key[0..self.method.keyLen()],
+            &next_rx.nonce,
             input[cursor..],
             out,
         );
 
-        self.key = next_key;
-        self.salt = next_salt;
-        self.salt_len = next_salt_len;
-        self.rx_nonce = next_nonce;
+        self.rx = next_rx;
         self.received_salt = next_received_salt;
         return plain;
     }
@@ -356,12 +359,27 @@ fn decodeChunk(
 }
 
 fn incrementNonce(nonce: *[12]u8) void {
-    var i: usize = nonce.len;
-    while (i > 0) {
-        i -= 1;
+    var i: usize = 0;
+    while (i < nonce.len) : (i += 1) {
         nonce[i] +%= 1;
         if (nonce[i] != 0) break;
     }
+}
+
+test "nonce increments as a little-endian integer" {
+    var nonce = [_]u8{0} ** 12;
+    incrementNonce(&nonce);
+    try std.testing.expectEqual(@as(u8, 0x01), nonce[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), nonce[11]);
+
+    nonce = [_]u8{0} ** 12;
+    nonce[0] = 0xff;
+    nonce[1] = 0xff;
+    incrementNonce(&nonce);
+    try std.testing.expectEqual(@as(u8, 0x00), nonce[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), nonce[1]);
+    try std.testing.expectEqual(@as(u8, 0x01), nonce[2]);
+    try std.testing.expectEqual(@as(u8, 0x00), nonce[11]);
 }
 
 test "client session writes salt once and server session decodes multiple chunks" {
@@ -467,7 +485,7 @@ test "server session rejects oversized decrypted length without consuming state"
     var nonce = [_]u8{0} ** 12;
     try crypto.sealDetached(
         method,
-        client.key[0..method.keyLen()],
+        client.tx.key[0..method.keyLen()],
         nonce[0..],
         "",
         oversized_len_field[0..],
@@ -484,4 +502,36 @@ test "server session rejects oversized decrypted length without consuming state"
     const valid_used = try client.writeChunk("ok", valid_frame[0..]);
     const got = try server.readChunk(valid_frame[0..valid_used], plain[0..]);
     try std.testing.expectEqualStrings("ok", got);
+}
+
+test "duplex session keeps inbound and outbound subkeys separate" {
+    const method = Method.aes_128_gcm;
+    const master = [_]u8{0xab} ** 16;
+    const local_salt = [_]u8{0xcd} ** 16;
+    const peer_salt = [_]u8{0xef} ** 16;
+
+    var local = try Session.initClient(method, master[0..], local_salt[0..]);
+    var remote_decoder = try Session.initServer(method, master[0..]);
+
+    var frame_one: [128]u8 = undefined;
+    const used_one = try local.writeChunk("one", frame_one[0..]);
+
+    var plain_one: [16]u8 = undefined;
+    const got_one = try remote_decoder.readChunk(frame_one[0..used_one], plain_one[0..]);
+    try std.testing.expectEqualStrings("one", got_one);
+
+    var peer_sender = try Session.initClient(method, master[0..], peer_salt[0..]);
+    var peer_frame: [128]u8 = undefined;
+    const peer_used = try peer_sender.writeChunk("peer", peer_frame[0..]);
+
+    var local_plain: [16]u8 = undefined;
+    const got_peer = try local.readChunk(peer_frame[0..peer_used], local_plain[0..]);
+    try std.testing.expectEqualStrings("peer", got_peer);
+
+    var frame_two: [128]u8 = undefined;
+    const used_two = try local.writeChunk("two", frame_two[0..]);
+
+    var plain_two: [16]u8 = undefined;
+    const got_two = try remote_decoder.readChunk(frame_two[0..used_two], plain_two[0..]);
+    try std.testing.expectEqualStrings("two", got_two);
 }
