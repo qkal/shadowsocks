@@ -550,7 +550,10 @@ git commit -m "feat: add streaming shadowsocks tcp sessions"
 - Modify: `src/app/local/service.zig`
 - Modify: `src/app/server/tcp_session.zig`
 - Modify: `src/app/server/service.zig`
+- Modify: `src/cli/sslocal_main.zig`
+- Modify: `src/cli/ssserver_main.zig`
 - Modify: `test/integration/tcp_happy_path.zig`
+- Modify: `build.zig`
 
 - [ ] **Step 1: Replace the placeholder integration test with a real TCP echo test**
 
@@ -645,12 +648,12 @@ fn runEchoOnce(listener: *std.net.Server, expected: []const u8) !void {
 Run:
 
 ```powershell
-zig test test/integration/tcp_happy_path.zig -I src
+zig build test
 ```
 
 Expected:
 
-- FAIL because `runLocal`, `runServer`, and the TCP session modules do not yet open sockets or relay bytes
+- FAIL because `runLocal`, `runServer`, and the TCP session modules do not yet open sockets or relay bytes. On Zig 0.16 the integration test must run through the build graph so it receives the `shadowsocks_zig` module import.
 
 - [ ] **Step 3: Implement the local/server TCP sessions and service loops**
 
@@ -736,7 +739,6 @@ pub fn handleClient(client: std.net.Stream, config: RuntimeConfig) !void {
 Run:
 
 ```powershell
-zig test test/integration/tcp_happy_path.zig -I src
 zig build test
 zig build check
 ```
@@ -748,7 +750,7 @@ Expected:
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add src/net/tcp.zig src/net/socket_opts.zig src/app/local/tcp_session.zig src/app/local/service.zig src/app/server/tcp_session.zig src/app/server/service.zig test/integration/tcp_happy_path.zig
+git add build.zig src/net/tcp.zig src/net/socket_opts.zig src/app/local/tcp_session.zig src/app/local/service.zig src/app/server/tcp_session.zig src/app/server/service.zig src/cli/sslocal_main.zig src/cli/ssserver_main.zig test/integration/tcp_happy_path.zig
 git commit -m "feat: implement tcp relay happy path"
 ```
 

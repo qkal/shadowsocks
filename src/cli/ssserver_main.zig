@@ -11,5 +11,8 @@ pub fn main(init: std.process.Init) !void {
     var cfg = try ss.cli.loadConfigFromArgs(init.gpa, init.io, .server, config_path);
     defer cfg.deinit(init.gpa);
 
-    _ = try ss.app.runServer(cfg);
+    var running = try ss.app.runServer(cfg);
+    defer running.stop();
+
+    while (true) try std.Io.sleep(init.io, .fromSeconds(3600), .awake);
 }
